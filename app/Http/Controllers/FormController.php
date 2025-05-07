@@ -26,9 +26,14 @@ class FormController extends Controller
         ->first();
 
         if ($existing) {
+            if ($existing->completed_at) {
+                return response()->json([
+                    'message' => 'Sorry, this email or phone number has already been used for a completed application.'
+                ], 422); // Unprocessable Entity
+            }
             $existing->delete();
         }
-        
+
         $customer = Customer::create([
             'name' => $data['name'],
             'email' => $data['email'],
