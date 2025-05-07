@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\Customer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Log;
+
 
 class FormController extends Controller
 {
@@ -55,7 +57,10 @@ class FormController extends Controller
     public function updateStep(Request $request, $id)
     {
         $token = $request->bearerToken(); // Read from Authorization header
-    
+        Log::info('Incoming Request Headers', $request->headers->all());
+        Log::info('Bearer Token Parsed', ['token' => $request->bearerToken()]);
+
+
         $customer = $this->findCustomer($id, $token);
         if (!$customer) {
             return response()->json(['error' => 'Unauthorized'], 401);
@@ -79,8 +84,8 @@ class FormController extends Controller
     
             case 2:
                 $validated = $request->validate([
-                    'dob'    => 'required|date',
-                    'income' => 'required|numeric|min:0',
+                    'dob'    => 'required|date|before:-18 years',
+                    'income' => 'required|numeric|min:1.01',
                 ]);
                 $customer->update([
                     'dob' => $validated['dob'],
@@ -118,6 +123,24 @@ class FormController extends Controller
         return response()->json([
             'step' => $customer->step,
             'message' => 'Form progress retrieved.',
+        ]);
+    }
+
+    public function show(Request $request, $id) {
+        $customer = Customer::where('id', $id)
+            ->where('access_token', $request->bearerToken())
+            ->firstOrFail();
+
+        return response()->json([
+            'name' => $customer->name,
+            'email' => $customer->email,
+            'phone' => $customer->phone,
+            'address' => $customer->address,
+            'postcode' => $customer->postcode,
+            'dob' => $customer->dob,
+            'income' => $customer->income,
+            'step' => $customer->step,
+            'completed_at' => $customer->completed_at,
         ]);
     }
 }
