@@ -8,6 +8,11 @@ use Illuminate\Support\Carbon;
 
 class FormController extends Controller
 {
+    protected function findCustomer(int $id, string $token): ?Customer {
+    return Customer::where('id', $id)
+                    ->where('access_token', $token)
+                    ->first();
+    }
     public function start(Request $request) {
         $data = $request->validate([
             'email' => 'required|email',
@@ -15,29 +20,11 @@ class FormController extends Controller
             'name' => 'required|string',
         ]);
 
-        $existing = Customer::where(function ($query) use ($data) {
-            $query->where('email', $data['email'])
-                ->orWhere('phone', $data['phone']);
-        })->first();
-
-        if ($existing) {
-            if ($existing->completed_at) {
-                return response()->json([
-                    'error' => 'This email/phone number is already in use',
-                ], 409);
-            }
-            return response()->json([
-                'message' => 'Resuming existing form.',
-                'id' => $existing->id,
-                'step' => $existing->step,
-            ]);
-        }
-
-
         $customer = Customer::create([
             'name' => $data['name'],
             'email' => $data['email'],
             'phone' => $data['phone'],
+            'access_token' => bin2hex(random_bytes(32)),
             'step' => 1,
             'last_active_at' => Carbon::now()
         ]);
@@ -45,32 +32,40 @@ class FormController extends Controller
         return response()->json([
             'message' => 'New form started.',
             'id' => $customer->id,
+            'access_token' => $customer->access_token,
             'step' => 1,
         ]);
 
     }
 
-    public function updateStep(Request $request, $id) {
-        $customer = Customer::findOrFail($id);
-
-        $step = (int) $request->input('step', $customer->step);
-
+    public function updateStep(Request $request, $id)
+    {
+        $token = $request->bearerToken(); // Read from Authorization header
+    
+        $customer = $this->findCustomer($id, $token);
+        if (!$customer) {
+            return response()->json(['error' => 'Unauthorized'], 401);
+        }
+    
+        $step = $customer->step;
+    
         switch ($step) {
             case 1:
                 $validated = $request->validate([
-                    'address' => 'required|string',
+                    'address'  => 'required|string',
                     'postcode' => 'required|string',
                 ]);
                 $customer->update([
                     'address' => $validated['address'],
                     'postcode' => $validated['postcode'],
                     'step' => 2,
-                    'last_active_at' => now()
+                    'last_active_at' => now(),
                 ]);
                 break;
+    
             case 2:
                 $validated = $request->validate([
-                    'dob' => 'required|date',
+                    'dob'    => 'required|date',
                     'income' => 'required|numeric|min:0',
                 ]);
                 $customer->update([
@@ -80,60 +75,35 @@ class FormController extends Controller
                     'completed_at' => now(),
                 ]);
                 break;
-            case 3: 
-                $requestedStep = $request->input('step');
-
-                if (is_numeric($requestedStep) && $requestedStep >= 0 && $requestedStep <= 2) {
-                    $customer->step = $requestedStep;
-                    $customer->save();
-
-                    return response()->json([
-                        'message' => "Moved back to step $requestedStep.",
-                        'step' => (int)$requestedStep
-                    ]);
-                }
-
-                return response()->json([
-                    'error' => 'Invalid step requested.'
-                ], 422);
-            case 4:
-                $customer->completed_at = now();
-                $customer->save();
-
-                return response()->json([
-                    'message' => 'Application successfully completed.',
-                    'step' => 4
+    
+            case 3:
+                $validated = $request->validate([
+                    'step' => 'required|integer|min:1|max:3'
                 ]);
-            default:
-                return response()->json([
-                    'error' => 'Invalid step progression.',
-                ], 400);
+                $customer->update([
+                    'step' => $validated['step']
+                ]);
+                break;
         }
-
+    
         return response()->json([
-            'message' => "Step {$customer->step} completed.",
-            'step' => $customer->step,
+            'message' => 'Step updated.',
+            'step'    => $customer->step,
         ]);
     }
 
-    public function checkStatus($id) {
-        $customer = Customer::find($id);
-
+    public function checkStatus(Request $request, $id)
+    {
+        $token = $request->bearerToken();
+    
+        $customer = $this->findCustomer($id, $token);
         if (!$customer) {
-            return response()->json([
-                'error' => 'Form not found.'
-            ], 404);
+            return response()->json(['error' => 'Unauthorized'], 401);
         }
-
-        if ($customer->completed_at) {
-            return response()->json([
-                'error' => 'Form already completed.'
-            ], 409);
-        }
-
+    
         return response()->json([
-            'id' => $customer->id,
-            'step' => $customer->step
+            'step' => $customer->step,
+            'message' => 'Form progress retrieved.',
         ]);
     }
 }

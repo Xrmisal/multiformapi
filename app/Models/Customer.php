@@ -10,6 +10,7 @@ class Customer extends Model
         'name',
         'email',
         'phone',
+        'access_token',
         'address',
         'postcode',
         'dob',
