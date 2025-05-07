@@ -20,6 +20,15 @@ class FormController extends Controller
             'name' => 'required|string',
         ]);
 
+        $existing = Customer::where('email', $data['email'])
+        ->orWhere('phone', $data['phone'])
+        ->whereNull('completed_at')
+        ->first();
+
+        if ($existing) {
+            $existing->delete();
+        }
+        
         $customer = Customer::create([
             'name' => $data['name'],
             'email' => $data['email'],
