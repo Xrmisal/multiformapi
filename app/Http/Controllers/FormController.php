@@ -81,10 +81,29 @@ class FormController extends Controller
                 ]);
                 break;
             case 3: 
+                $requestedStep = $request->input('step');
+
+                if (is_numeric($requestedStep) && $requestedStep >= 0 && $requestedStep <= 2) {
+                    $customer->step = $requestedStep;
+                    $customer->save();
+
+                    return response()->json([
+                        'message' => "Moved back to step $requestedStep.",
+                        'step' => (int)$requestedStep
+                    ]);
+                }
+
                 return response()->json([
-                    'message' => 'Form is already completed.',
-                    'step' => $customer->step,
-                ], 409);
+                    'error' => 'Invalid step requested.'
+                ], 422);
+            case 4:
+                $customer->completed_at = now();
+                $customer->save();
+
+                return response()->json([
+                    'message' => 'Application successfully completed.',
+                    'step' => 4
+                ]);
             default:
                 return response()->json([
                     'error' => 'Invalid step progression.',
