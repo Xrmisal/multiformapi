@@ -30,7 +30,7 @@ class FormController extends Controller
         if ($existing) {
             if ($existing->completed_at) {
                 return response()->json([
-                    'message' => 'Sorry, this email or phone number has already been used for a completed application.'
+                    'error' => 'Sorry, this email or phone number has already been used for a completed application.'
                 ], 422); // Unprocessable Entity
             }
             $existing->delete();
@@ -61,7 +61,7 @@ class FormController extends Controller
         Log::info('Bearer Token Parsed', ['token' => $request->bearerToken()]);
 
 
-        $customer = $this->findCustomer($id, $token);
+        $customer = $this->findCustomer((int)$id, (string)$token);
         if (!$customer) {
             return response()->json(['error' => 'Unauthorized'], 401);
         }
@@ -91,18 +91,19 @@ class FormController extends Controller
                     'dob' => $validated['dob'],
                     'income' => $validated['income'],
                     'step' => 3,
-                    'completed_at' => now(),
                 ]);
                 break;
     
             case 3:
-                $validated = $request->validate([
-                    'step' => 'required|integer|min:1|max:3'
-                ]);
                 $customer->update([
-                    'step' => $validated['step']
+                    'completed_at' => now(),
+                    'step' => 4
                 ]);
                 break;
+            default:
+                return response()->json([
+                    'message' => 'Form already complete'
+                ]);
         }
     
         return response()->json([
@@ -142,5 +143,25 @@ class FormController extends Controller
             'step' => $customer->step,
             'completed_at' => $customer->completed_at,
         ]);
+    }
+
+    public function delete(Request $request, $id) {
+        $customer = Customer::where('id', $id)
+        ->where('access_token', $request->bearerToken())
+        ->firstOrFail();
+
+        if (!$customer->completed_at) {
+            $customer->delete();
+            return response()->json([
+                'message' => 'Partial form deleted'
+            ], 200);
+            
+        } else {
+            return response()->json([
+                'message' => 'Form is complete, cannot delete'
+            ], 403);
+        }
+
+
     }
 }
