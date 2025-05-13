@@ -11,8 +11,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('customers', function (Blueprint $table) {
-            $table->string('access_token', 64)->unique()->after('phone');
+        Schema::create('form_tokens', function (Blueprint $table) {
+            $table->id();
+            $table->string('token')->unique();
+            $table->foreignId('customer_id')->constrained();
+            $table->timestamps();
         });
     }
 
@@ -21,8 +24,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('customers', function (Blueprint $table) {
-            //
-        });
+        Schema::dropIfExists('form_tokens');
     }
 };

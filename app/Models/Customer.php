@@ -10,7 +10,6 @@ class Customer extends Model
         'name',
         'email',
         'phone',
-        'access_token',
         'address',
         'postcode',
         'dob',
@@ -19,4 +18,8 @@ class Customer extends Model
         'completed_at',
         'last_active_at'
     ];
+
+    public function formToken() {
+        return $this->hasOne(FormToken::class);
+    }
 }

@@ -3,16 +3,18 @@
 namespace App\Http\Controllers;
 
 use App\Models\Customer;
+use App\Models\FormToken;
+use App\Helpers\AuthHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cookie;
 
 
 class FormController extends Controller
 {
     protected function findCustomer(int $id, string $token): ?Customer {
     return Customer::where('id', $id)
-                    ->where('access_token', $token)
                     ->first();
     }
     public function start(Request $request) {
@@ -24,7 +26,7 @@ class FormController extends Controller
 
         $existing = Customer::where('email', $data['email'])
         ->orWhere('phone', $data['phone'])
-        ->whereNull('completed_at')
+        ->whereNotNull('completed_at')
         ->first();
 
         if ($existing) {
@@ -36,35 +38,49 @@ class FormController extends Controller
             $existing->delete();
         }
 
+        $token = bin2hex(random_bytes(32));
+
         $customer = Customer::create([
             'name' => $data['name'],
             'email' => $data['email'],
             'phone' => $data['phone'],
-            'access_token' => bin2hex(random_bytes(32)),
             'step' => 1,
             'last_active_at' => Carbon::now()
+        ]);
+
+        FormToken::create([
+            'token' => $token,
+            'customer_id' => $customer->id,
         ]);
 
         return response()->json([
             'message' => 'New form started.',
             'id' => $customer->id,
-            'access_token' => $customer->access_token,
             'step' => 1,
-        ]);
+        ])->cookie(
+            'multiform_access_token',
+            $token,
+            60,
+            '/',
+            null,
+            true,
+            true
+        );
 
     }
 
     public function updateStep(Request $request, $id)
     {
-        $token = $request->bearerToken(); // Read from Authorization header
-        Log::info('Incoming Request Headers', $request->headers->all());
-        Log::info('Bearer Token Parsed', ['token' => $request->bearerToken()]);
+        $token = $request->cookie('multiform_access_token');
 
+        $formToken = FormToken::where('token', $token)->first();
 
-        $customer = $this->findCustomer((int)$id, (string)$token);
-        if (!$customer) {
+        if(!$formToken) {
             return response()->json(['error' => 'Unauthorized'], 401);
         }
+
+
+        $customer = $formToken->customer;
     
         $step = $customer->step;
     
@@ -114,10 +130,9 @@ class FormController extends Controller
 
     public function checkStatus(Request $request, $id)
     {
-        $token = $request->bearerToken();
-    
-        $customer = $this->findCustomer($id, $token);
-        if (!$customer) {
+        $customer = AuthHelper::getAuthenticatedCustomer($request);
+
+        if (!$customer || $customer->id != $id) {
             return response()->json(['error' => 'Unauthorized'], 401);
         }
     
@@ -129,7 +144,6 @@ class FormController extends Controller
 
     public function show(Request $request, $id) {
         $customer = Customer::where('id', $id)
-            ->where('access_token', $request->bearerToken())
             ->firstOrFail();
 
         return response()->json([
@@ -146,9 +160,14 @@ class FormController extends Controller
     }
 
     public function delete(Request $request, $id) {
-        $customer = Customer::where('id', $id)
-        ->where('access_token', $request->bearerToken())
-        ->firstOrFail();
+
+        $customer = AuthHelper::getAuthenticatedCustomer($request);
+
+        if (!$customer || $customer->id != $id) {
+            return response()->json([
+                'message' => 'Unauthorized or invalid customer.'
+            ], 401);
+        }
 
         if (!$customer->completed_at) {
             $customer->delete();
